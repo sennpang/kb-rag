@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f6f7fb;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: #1f2937;
+}
+
+/* Markdown 渲染区 */
+.markdown {
+  @apply text-sm leading-7;
+}
+.markdown > *:first-child {
+  margin-top: 0;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  @apply font-semibold text-slate-800;
+  margin: 0.8em 0 0.4em;
+}
+.markdown h1 {
+  @apply text-base;
+}
+.markdown h2 {
+  @apply text-[15px];
+}
+.markdown h3 {
+  @apply text-sm;
+}
+.markdown p {
+  margin: 0.5em 0;
+}
+.markdown ul {
+  @apply list-disc pl-5;
+  margin: 0.5em 0;
+}
+.markdown ol {
+  @apply list-decimal pl-5;
+  margin: 0.5em 0;
+}
+.markdown li {
+  margin: 0.2em 0;
+}
+.markdown code {
+  @apply rounded bg-slate-100 px-1 py-0.5 text-[12px] text-pink-700;
+}
+.markdown pre {
+  @apply overflow-x-auto rounded-lg bg-slate-900 p-3 my-2;
+}
+.markdown pre code {
+  @apply bg-transparent p-0 text-slate-100;
+}
+.markdown table {
+  @apply my-2 w-full border-collapse text-xs;
+}
+.markdown th,
+.markdown td {
+  @apply border border-slate-200 px-2 py-1 text-left;
+}
+.markdown th {
+  @apply bg-slate-50 font-medium;
+}
+.markdown strong {
+  @apply font-semibold text-slate-800;
+}
+.markdown blockquote {
+  @apply border-l-2 border-slate-200 pl-3 text-slate-500;
+  margin: 0.5em 0;
+}
