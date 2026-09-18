@@ -35,7 +35,7 @@ export async function POST(req: Request): Promise<Response> {
       );
     });
     const sources = toSourceItems(contexts);
-    const targetConversationId = await resolveConversation(kbId, conversationId, question);
+    const targetConversationId = await resolveConversation(kbId, conversationId ?? undefined, question);
     await insertMessage({ conversationId: targetConversationId, role: 'user', content: question });
 
     return sseResponse(async ({ send, signal }) => {

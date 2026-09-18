@@ -14,7 +14,7 @@ export const chatMessageSchema = z.object({
 
 export const chatRequestSchema = z.object({
   kbId: uuidSchema,
-  conversationId: uuidSchema.optional(),
+  conversationId: uuidSchema.optional().nullable(),
   messages: z.array(chatMessageSchema).min(1, '至少包含一条消息'),
 });
 export type ChatRequest = z.infer<typeof chatRequestSchema>;

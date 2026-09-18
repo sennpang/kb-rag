@@ -129,7 +129,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify({ kbId, conversationId, messages: history }),
+        body: JSON.stringify({ kbId, conversationId: conversationId ?? undefined, messages: history }),
       });
 
       if (!response.ok || !response.body) {
