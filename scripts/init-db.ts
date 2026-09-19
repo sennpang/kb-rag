@@ -56,6 +56,10 @@ CREATE INDEX IF NOT EXISTS chunks_kb_doc_idx ON chunks (kb_id, doc_id);
 CREATE INDEX IF NOT EXISTS chunks_content_fts_idx
   ON chunks USING gin (to_tsvector('simple', content));
 
+-- 同一知识库内文件名唯一：从数据层杜绝重复上传（并发安全）
+CREATE UNIQUE INDEX IF NOT EXISTS documents_kb_filename_uidx
+  ON documents (kb_id, filename);
+
 CREATE TABLE IF NOT EXISTS conversations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   kb_id       UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,

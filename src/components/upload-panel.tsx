@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<DocumentDto['status'], { text: string; className: str
 export function UploadPanel({ kbId, onDocsChange }: Props) {
   const [documents, setDocuments] = useState<DocumentDto[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -41,14 +41,27 @@ export function UploadPanel({ kbId, onDocsChange }: Props) {
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     setUploading(true);
-    setError(null);
+    setNotice(null);
+
+    const seen = new Set<string>(); // 本次选择内的文件名去重
+    const skipped: string[] = [];
+
     try {
       for (const file of Array.from(files)) {
-        await uploadDocument(kbId, file);
+        if (seen.has(file.name)) {
+          skipped.push(`「${file.name}」本次选择中重复`);
+          continue;
+        }
+        seen.add(file.name);
+        try {
+          await uploadDocument(kbId, file);
+        } catch (e) {
+          // 单文件被拦截（同名/索引失败）不阻断其余文件
+          skipped.push(`「${file.name}」${e instanceof Error ? e.message : '上传失败'}`);
+        }
       }
       await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '上传失败');
+      if (skipped.length) setNotice(skipped.join('；'));
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -81,7 +94,9 @@ export function UploadPanel({ kbId, onDocsChange }: Props) {
         </label>
       </div>
 
-      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+      {notice && (
+        <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-600">{notice}</p>
+      )}
 
       {documents.length > 0 && (
         <ul className="mt-3 space-y-1.5">

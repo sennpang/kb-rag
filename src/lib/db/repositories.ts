@@ -45,6 +45,14 @@ export async function knowledgeBaseExists(id: string): Promise<boolean> {
   return rows[0]?.exists ?? false;
 }
 
+/** 同一知识库下是否已存在同名文档（上传前去重，唯一索引是并发兜底）。 */
+export async function documentExists(kbId: string, filename: string): Promise<boolean> {
+  const rows = await sql<Array<{ exists: boolean }>>`
+    SELECT EXISTS(SELECT 1 FROM documents WHERE kb_id = ${kbId} AND filename = ${filename})
+  `;
+  return rows[0]?.exists ?? false;
+}
+
 /* ──────────────────────── 文档 ──────────────────────── */
 
 interface DocumentRow {

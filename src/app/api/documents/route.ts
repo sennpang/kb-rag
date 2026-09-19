@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import {
+  documentExists,
   insertDocument,
   knowledgeBaseExists,
   listDocuments,
@@ -40,6 +41,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       throw new ApiError('仅支持 PDF / DOCX / Markdown / TXT', 422);
     }
     if (!(await knowledgeBaseExists(kbId))) throw new ApiError('知识库不存在', 404);
+    if (await documentExists(kbId, file.name)) {
+      throw new ApiError(`文档「${file.name}」已存在，如需重新上传请先删除原文档`, 409);
+    }
 
     const doc = await insertDocument({ kbId, filename: file.name, mimeType: file.type });
 
