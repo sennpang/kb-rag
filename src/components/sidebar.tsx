@@ -8,11 +8,13 @@ interface Props {
   kbId: string | null;
   conversations: ConversationDto[];
   conversationId: string | null;
+  userEmail: string;
   onSwitchKb: (kbId: string) => void;
   onCreateKb: (name: string) => Promise<void>;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => Promise<void>;
+  onSignOut: () => void;
 }
 
 export function Sidebar({
@@ -20,11 +22,13 @@ export function Sidebar({
   kbId,
   conversations,
   conversationId,
+  userEmail,
   onSwitchKb,
   onCreateKb,
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
+  onSignOut,
 }: Props) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -119,6 +123,18 @@ export function Sidebar({
           ))}
         </ul>
       </nav>
+
+      <div className="flex items-center gap-2 border-t border-slate-100 p-3">
+        <span className="min-w-0 flex-1 truncate text-xs text-slate-400" title={userEmail}>
+          {userEmail}
+        </span>
+        <button
+          onClick={onSignOut}
+          className="shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
+        >
+          退出
+        </button>
+      </div>
     </aside>
   );
 }

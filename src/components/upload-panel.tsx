@@ -14,8 +14,14 @@ const STATUS_LABEL: Record<DocumentDto['status'], { text: string; className: str
   pending: { text: '等待中', className: 'bg-slate-100 text-slate-500' },
   processing: { text: '索引中', className: 'bg-amber-50 text-amber-600' },
   done: { text: '已就绪', className: 'bg-emerald-50 text-emerald-600' },
-  failed: { text: '失败', className: 'bg-red-50 text-red-600' },
+  failed: { text: '失败', className: 'bg-red-50 text-red-500' },
 };
+
+/** 浏览器端计算文件 SHA-256 十六进制指纹（Web Crypto，零依赖）。 */
+async function computeFileHash(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 /** 文档上传与管理面板（内嵌在对话页顶部的可折叠区域）。 */
 export function UploadPanel({ kbId, onDocsChange }: Props) {
@@ -43,20 +49,27 @@ export function UploadPanel({ kbId, onDocsChange }: Props) {
     setUploading(true);
     setNotice(null);
 
-    const seen = new Set<string>(); // 本次选择内的文件名去重
+    const seen = new Set<string>(); // 本次选择内的内容指纹去重
     const skipped: string[] = [];
 
     try {
       for (const file of Array.from(files)) {
-        if (seen.has(file.name)) {
-          skipped.push(`「${file.name}」本次选择中重复`);
+        let contentHash: string;
+        try {
+          contentHash = await computeFileHash(file);
+        } catch {
+          skipped.push(`「${file.name}」指纹计算失败`);
           continue;
         }
-        seen.add(file.name);
+        if (seen.has(contentHash)) {
+          skipped.push(`「${file.name}」本次选择中内容重复`);
+          continue;
+        }
+        seen.add(contentHash);
         try {
-          await uploadDocument(kbId, file);
+          await uploadDocument(kbId, file, contentHash);
         } catch (e) {
-          // 单文件被拦截（同名/索引失败）不阻断其余文件
+          // 单文件被拦截（内容重复/索引失败）不阻断其余文件
           skipped.push(`「${file.name}」${e instanceof Error ? e.message : '上传失败'}`);
         }
       }
@@ -81,7 +94,7 @@ export function UploadPanel({ kbId, onDocsChange }: Props) {
           <p className="mt-0.5 text-xs text-slate-400">支持 PDF / DOCX / Markdown / TXT，单文件 ≤ 20MB</p>
         </div>
         <label className="cursor-pointer rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-50">
-          {uploading ? '上传索引中…' : '上传文档'}
+          {uploading ? '计算指纹/索引中…' : '上传文档'}
           <input
             ref={inputRef}
             type="file"

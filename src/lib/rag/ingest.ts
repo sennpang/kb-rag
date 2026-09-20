@@ -3,6 +3,9 @@ import { insertChunks, updateDocumentStatus } from '@/lib/db/repositories';
 import { parseFileToText } from './parsers';
 import { splitText } from './splitters';
 
+/** 单文档切片上限：防超大文件一次向量化烧大量 embedding 费用（1000 段 ≈ 50 万字资料）。 */
+const MAX_CHUNKS_PER_DOC = 1000;
+
 /**
  * 离线索引流水线（上传时执行一次）：
  * 解析 → 切分 → 批量向量化 → 写入 pgvector，并驱动文档状态机。
@@ -27,6 +30,11 @@ export async function ingestDocument(params: {
     const pieces = splitText(rawText);
     if (pieces.length === 0) {
       throw new Error('切分结果为空');
+    }
+    if (pieces.length > MAX_CHUNKS_PER_DOC) {
+      throw new Error(
+        `文档切片数 ${pieces.length} 超过单文档上限 ${MAX_CHUNKS_PER_DOC}（约 50 万字），请拆分后分批上传`,
+      );
     }
 
     const vectors = await embedTexts(pieces);

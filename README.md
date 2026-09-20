@@ -8,6 +8,13 @@
 - 数据库：PostgreSQL 16 + pgvector（HNSW 余弦索引）
 - 检索：向量语义 + 全文关键词，RRF 排名融合（Rerank 精排预留接口）
 - 交互：手写 SSE 协议（`meta → sources → delta* → done`），逐字输出、可停止，正文 `[n]` 引用可点开查看原文
+- 用户体系：Auth.js v5 邮箱注册/登录（bcrypt 加盐哈希 + httpOnly Cookie），注册须邮箱验证码确认归属（QQ 邮箱 SMTP 投递），知识库按用户隔离，middleware 与接口双层鉴权
+- 上传去重：基于文件内容 SHA-256 指纹（前端 Web Crypto 计算、后端重算为准），同知识库内容相同即拒绝，文件名可自由修改
+- 安全频控：发码接口按邮箱（60s 间隔 / 每小时 5 封）与 IP（每小时 20 封 / 每天 50 封）双维度限流；验证码哈希存储、10 分钟过期、单次消费，连续输错 5 次即作废，防刷信轰炸与验证码爆破（IP 仅以哈希落库）
+- 上传配额：单知识库上限 100 个文档，单用户每小时 30 / 每天 200 次上传；配额校验先于解析与向量化，防刷接口、防存储膨胀与 embedding 费用消耗
+- 问答频控：chat 接口按用户限流（每小时 50 / 每天 300 次）；单次请求历史消息 ≤ 40 条、单条 ≤ 2 万字、总字符 ≤ 6 万，防 API 费用盗刷与超长上下文攻击
+- 资源封顶：单文档切片 ≤ 1000 段、每用户知识库 ≤ 20 个，超限在向量化/落库前直接拒绝
+- 安全基线：全局 CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy 等安全响应头；系统提示词内置防资料指令注入；检索等内部错误不向前端透传细节
 
 ## ✅ 你需要做的事（首次启动 10 分钟）
 
@@ -16,9 +23,10 @@
 3. **申请两个 API Key**：
    - DeepSeek（对话）：<https://platform.deepseek.com/>，充值 ¥10–20 即可；
    - 硅基流动（Embedding）：<https://cloud.siliconflow.cn/>，创建 API 密钥；BGE-m3 在免费/低价模型范围内。
-4. **配置环境变量**：`cp .env.example .env.local`，填入两把 key（默认值已按 bge-m3 配好，一般只改 key）。
+4. **配置环境变量**：`cp .env.example .env.local`，填入两把 key 与 QQ 邮箱 SMTP 授权码（默认值已按 bge-m3 配好）。
+   - 授权码获取：QQ 邮箱 → 设置 → 账号 → 开启 IMAP/SMTP 服务 → 短信验证后生成 16 位授权码。
 5. **初始化数据库表**：`pnpm install` 然后 `pnpm db:init`（幂等，可重复执行；会自动创建「默认知识库」）。
-6. **启动**：`pnpm dev`，打开 <http://localhost:3000>（自动跳转 `/chat`）。
+6. **启动**：`pnpm dev`，打开 <http://localhost:3000>（未登录自动跳转 `/login`，先注册账号；历史无主知识库会自动归属首个注册用户）。
 7. **验证闭环**：在「知识库文档」上传一份 10 页内的 PDF → 状态变「已就绪」→ 提问，看到逐字回答与引用角标。
 
 > 如改用 OpenAI `text-embedding-3-small`：把 `.env.local` 中 baseURL/key/model 改为 OpenAI，并将 `EMBEDDING_DIMENSIONS` 改为 `1536`，**在尚未导入数据时**重新执行 `pnpm db:init`（维度变更需重建 `chunks` 表）。
@@ -100,10 +108,13 @@ git push -u origin main
 | 变量 | 值 |
 |---|---|
 | `DATABASE_URL` | Step 2 的 Neon **pooled** 连接串 |
+| `AUTH_SECRET` | 随机字符串，用 `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))` 生成 |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 与本地相同 |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | 与本地相同 |
 | `EMBEDDING_DIMENSIONS` | `1024`（**必须与建表时一致**，改维度需 DROP 并重建 chunks 表） |
 | `MAX_FILE_SIZE_MB` | `4`（Vercel 请求体硬上限 4.5MB） |
+| `SMTP_HOST` / `SMTP_PORT` | `smtp.qq.com` / `465` |
+| `SMTP_USER` / `SMTP_PASS` | QQ 邮箱地址 / SMTP 授权码（非登录密码） |
 
 3. **Settings → Functions → Function Region** 选 **Singapore (sin1)**，缩短到 Neon 与国内大模型 API 的延迟
 4. Deploy，等待构建完成
@@ -148,4 +159,6 @@ git push -u origin main
 
 - `.env.local` 已在 `.gitignore`；仓库公开前检查 git 历史无密钥。
 - 所有 key 只在服务端读取，不要加 `NEXT_PUBLIC_` 前缀。
+- 框架为 Next.js 15（App Router），路由参数、`cookies()/headers()` 等异步 API 已按 15 规范适配。
+- 全部接口走 zod 入参校验 + SQL 参数化；资源接口校验归属且不存在时统一返回 404，防 IDOR 与资源枚举。
 - 演示文档请使用公开或脱敏资料。

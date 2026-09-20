@@ -2,6 +2,7 @@ import { convertToCoreMessages, streamText, type UIMessage } from 'ai';
 import { getChatModel } from '@/lib/ai/provider';
 import { buildSystemPrompt, toSourceItems } from '@/lib/ai/prompts';
 import {
+  countRecentChatsByOwner,
   createConversation,
   getConversation,
   insertMessage,
@@ -10,11 +11,16 @@ import {
 import { hybridRetrieve } from '@/lib/rag/retrieve';
 import { ApiError, handleRoute, parseJsonBody } from '@/lib/http/route';
 import { sseResponse } from '@/lib/http/sse';
+import { requireUserId } from '@/lib/auth/session';
 import { chatRequestSchema } from '@/lib/validation/schemas';
 
 export const runtime = 'nodejs';
 // Vercel Hobby 函数超时上限 60s；流式回答在此时间内持续返回，不占用平台缓冲
 export const maxDuration = 60;
+
+// chat 接口配额（计费接口：LLM + 查询向量化均真实计费）
+const CHAT_HOURLY_LIMIT = 50;
+const CHAT_DAILY_LIMIT = 300;
 
 /**
  * POST /api/chat：检索 → 落库 → 流式生成。
@@ -22,17 +28,28 @@ export const maxDuration = 60;
  */
 export async function POST(req: Request): Promise<Response> {
   return handleRoute(async () => {
+    const userId = await requireUserId();
     const { kbId, conversationId, messages } = await parseJsonBody(req, chatRequestSchema);
-    if (!(await knowledgeBaseExists(kbId))) throw new ApiError('知识库不存在', 404);
+    if (!(await knowledgeBaseExists(kbId, userId))) throw new ApiError('知识库不存在', 404);
+
+    const [chatsHourly, chatsDaily] = await Promise.all([
+      countRecentChatsByOwner(userId, 3600),
+      countRecentChatsByOwner(userId, 86400),
+    ]);
+    if (chatsHourly >= CHAT_HOURLY_LIMIT) {
+      throw new ApiError('提问过于频繁，请 1 小时后再试', 429);
+    }
+    if (chatsDaily >= CHAT_DAILY_LIMIT) {
+      throw new ApiError('今日提问次数已达上限，请明天再试', 429);
+    }
 
     const question = [...messages].reverse().find((m) => m.role === 'user')?.content.trim();
     if (!question) throw new ApiError('缺少用户提问', 422);
 
+    // 检索失败不向客户端透传内部细节（组件/SQL 信息），细节仅记录服务端日志
     const contexts = await hybridRetrieve(kbId, question).catch((error) => {
-      throw new ApiError(
-        `检索失败：${error instanceof Error ? error.message : String(error)}`,
-        500,
-      );
+      console.error('[chat] 检索失败：', error);
+      throw new ApiError('知识检索失败，请稍后重试', 500);
     });
     const sources = toSourceItems(contexts);
     const targetConversationId = await resolveConversation(kbId, conversationId ?? undefined, question);

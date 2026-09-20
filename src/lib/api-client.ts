@@ -45,10 +45,18 @@ export const createKb = (name: string) => postJson<KnowledgeBaseDto>('/api/kb', 
 export const listDocuments = (kbId: string) =>
   getJson<DocumentDto[]>(`/api/documents?kbId=${encodeURIComponent(kbId)}`);
 
-export async function uploadDocument(kbId: string, file: File): Promise<void> {
+/**
+ * 上传文档。contentHash 为前端计算的 SHA-256 指纹（后端会重算校验，仅作业务携带）。
+ */
+export async function uploadDocument(
+  kbId: string,
+  file: File,
+  contentHash: string,
+): Promise<void> {
   const form = new FormData();
   form.set('kbId', kbId);
   form.set('file', file);
+  form.set('contentHash', contentHash);
   await request('/api/documents', { method: 'POST', body: form });
 }
 
@@ -70,3 +78,7 @@ export const deleteConversation = (id: string) =>
 /* ── 引用溯源 ── */
 export const fetchChunkContext = (docId: string, chunkIndex: number, signal?: AbortSignal) =>
   getJson<ChunkContextDto>(`/api/documents/${docId}/chunks/${chunkIndex}`, signal);
+
+/* ── 认证 ── */
+export const sendVerificationCode = (email: string) =>
+  postJson<{ sent: boolean }>('/api/auth/send-code', { email });

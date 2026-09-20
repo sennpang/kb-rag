@@ -19,6 +19,12 @@ const envSchema = z.object({
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1024),
 
   MAX_FILE_SIZE_MB: z.coerce.number().int().positive().max(100).default(20),
+
+  SMTP_HOST: z.string().default('smtp.qq.com'),
+  SMTP_PORT: z.coerce.number().int().positive().default(465),
+  SMTP_USER: z.string().min(1, '缺少 SMTP_USER（发件邮箱）'),
+  SMTP_PASS: z.string().min(1, '缺少 SMTP_PASS（邮箱 SMTP 授权码，非登录密码）'),
+  EMAIL_FROM: z.string().optional(),
 });
 
 type Env = z.infer<typeof envSchema>;

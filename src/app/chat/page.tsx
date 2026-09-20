@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { signOut, useSession } from 'next-auth/react';
 import {
   createKb,
   deleteConversation,
@@ -33,6 +34,7 @@ export default function ChatPage() {
   const [fatalError, setFatalError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const { data: session } = useSession();
 
   /* ── 启动：加载知识库列表 ── */
   useEffect(() => {
@@ -195,11 +197,13 @@ export default function ChatPage() {
         kbId={kbId}
         conversations={conversations}
         conversationId={conversationId}
+        userEmail={session?.user?.email ?? ''}
         onSwitchKb={setKbId}
         onCreateKb={handleCreateKb}
         onNewChat={handleNewChat}
         onSelectConversation={(id) => void handleSelectConversation(id)}
         onDeleteConversation={handleDeleteConversation}
+        onSignOut={() => void signOut({ callbackUrl: '/login' })}
       />
 
       <section className="flex min-w-0 flex-1 flex-col">
