@@ -1,5 +1,9 @@
 'use client';
 
+// 强制动态渲染：若被构建期预渲染（PRERENDER），未登录访问会直接拿到静态页面，
+// 绕过 middleware 的跳转登录逻辑。该页数据本就全部来自客户端 fetch，设为动态无副作用。
+export const dynamic = 'force-dynamic';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 import {
