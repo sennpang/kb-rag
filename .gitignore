@@ -19,6 +19,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+.trae/
 
 # 本地文件存储（如启用磁盘存储）
 uploads/

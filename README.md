@@ -14,6 +14,7 @@
 - 上传配额：单知识库上限 100 个文档，单用户每小时 30 / 每天 200 次上传；配额校验先于解析与向量化，防刷接口、防存储膨胀与 embedding 费用消耗
 - 问答频控：chat 接口按用户限流（每小时 50 / 每天 300 次）；单次请求历史消息 ≤ 40 条、单条 ≤ 2 万字、总字符 ≤ 6 万，防 API 费用盗刷与超长上下文攻击
 - 资源封顶：单文档切片 ≤ 1000 段、每用户知识库 ≤ 20 个，超限在向量化/落库前直接拒绝
+- 文档管理：聊天页左侧「文档」Tab 提供知识库 → 文件夹 → 文档三级树形导航与文档关键词搜索；上传索引完成后 AI 读取内容自动归类（可自动建文件夹、优先复用已有文件夹，失败不影响上传）；文件夹支持新建子级 / 重命名 / 删除（文档回落「未分类」），文档可随时移动，跨库移动前后端双重拒绝
 - 安全基线：全局 CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy 等安全响应头；系统提示词内置防资料指令注入；检索等内部错误不向前端透传细节
 
 ## ✅ 你需要做的事（首次启动 10 分钟）
@@ -25,6 +26,7 @@
    - 硅基流动（Embedding）：<https://cloud.siliconflow.cn/>，创建 API 密钥；BGE-m3 在免费/低价模型范围内。
 4. **配置环境变量**：`cp .env.example .env.local`，填入两把 key 与 QQ 邮箱 SMTP 授权码（默认值已按 bge-m3 配好）。
    - 授权码获取：QQ 邮箱 → 设置 → 账号 → 开启 IMAP/SMTP 服务 → 短信验证后生成 16 位授权码。
+   - 想用别名（英文邮箱账号 / `@foxmail.com`，在 QQ 邮箱「设置 → 账号」中申请）发信：直接把 `SMTP_USER` 改成别名即可，授权码不变；也可主号登录、用 `EMAIL_FROM` 指定别名发件地址。
 5. **初始化数据库表**：`pnpm install` 然后 `pnpm db:init`（幂等，可重复执行；会自动创建「默认知识库」）。
 6. **启动**：`pnpm dev`，打开 <http://localhost:3000>（未登录自动跳转 `/login`，先注册账号；历史无主知识库会自动归属首个注册用户）。
 7. **验证闭环**：在「知识库文档」上传一份 10 页内的 PDF → 状态变「已就绪」→ 提问，看到逐字回答与引用角标。
@@ -39,17 +41,18 @@ src/
 │   ├── chat/page.tsx            # 对话页：状态编排 + SSE 消费
 │   ├── api/
 │   │   ├── kb/route.ts          # 知识库列表/创建
-│   │   ├── documents/           # 上传/列表/删除 + 切片原文定位（引用溯源）
+│   │   ├── documents/           # 上传/列表/移动/删除 + 切片原文定位（引用溯源）
+│   │   ├── folders/             # 文件夹 CRUD + AI 一键整理未分类文档
 │   │   ├── conversations/       # 会话列表/详情/删除（历史持久化）
 │   │   └── chat/route.ts        # SSE 流式问答（检索→约束生成→落库）
 │   └── globals.css
-├── components/                  # 侧边栏 / 上传面板 / 对话区 / 消息 / 引用抽屉
+├── components/                  # 侧边栏（会话/文档 Tab）/ 文档树 / 上传面板 / 对话区 / 消息 / 引用抽屉
 ├── lib/
 │   ├── env.ts                   # 环境变量 zod 校验（fail-fast）
 │   ├── types.ts                 # 前后端共享 DTO 与 SSE 事件类型
 │   ├── validation/schemas.ts    # 入参 zod 校验
 │   ├── db/                      # postgres 客户端 + 仓储函数 + 行类型
-│   ├── ai/                      # 模型客户端 / 批量 embedding（重试+维度校验）/ prompt
+│   ├── ai/                      # 模型客户端 / 批量 embedding（重试+维度校验）/ prompt / 自动分类
 │   ├── rag/
 │   │   ├── parsers.ts           # PDF/DOCX/MD/TXT 解析
 │   │   ├── splitters.ts         # 段落聚合+定长+overlap 切分（含单测）
@@ -138,6 +141,7 @@ git push -u origin main
 ```
 上传 → 解析(PDF/DOCX/MD/TXT) → 切分(500字/80 overlap) → BGE-m3 向量化
      → PostgreSQL pgvector（HNSW 余弦索引），状态 pending→processing→done/failed
+     → AI 读取首段样本自动归类（复用同名文件夹或新建，失败保持未分类）
 
 提问 → 问题向量化 → ┬ 向量路（<=> 余弦距离）
                     └ 关键词路（PG FTS/ts_rank）

@@ -3,11 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 import {
+  createFolder,
   createKb,
   deleteConversation,
+  deleteDocument,
+  deleteFolder,
   getConversation,
   listConversations,
+  listFolders,
   listKbs,
+  listDocuments,
+  moveDocument,
+  organizeFolders,
+  renameFolder,
 } from '@/lib/api-client';
 import type {
   ConversationDto,
@@ -20,6 +28,7 @@ import { Sidebar } from '@/components/sidebar';
 import { UploadPanel } from '@/components/upload-panel';
 import { ChatPanel } from '@/components/chat-panel';
 import { CitationDrawer } from '@/components/citation-drawer';
+import type { KbTreeData } from '@/components/doc-tree';
 
 export default function ChatPage() {
   const [kbs, setKbs] = useState<KnowledgeBaseDto[]>([]);
@@ -32,6 +41,9 @@ export default function ChatPage() {
   const [docCount, setDocCount] = useState(0);
   const [citation, setCitation] = useState<SourceItem | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
+
+  // 文档树数据（按知识库懒加载，写操作后强制刷新）
+  const [dataByKb, setDataByKb] = useState<Record<string, KbTreeData | undefined>>({});
 
   const abortRef = useRef<AbortController | null>(null);
   const { data: session } = useSession();
@@ -60,6 +72,82 @@ export default function ChatPage() {
     setConversations(await listConversations(kbId));
   }, [kbId]);
 
+  /* ── 文档树：按库懒加载 + 写操作后强制刷新 ── */
+  const loadingRef = useRef<Set<string>>(new Set());
+
+  const loadKbTree = useCallback(async (id: string): Promise<KbTreeData> => {
+    const [folders, documents] = await Promise.all([listFolders(id), listDocuments(id)]);
+    return { folders, documents };
+  }, []);
+
+  const reloadKb = useCallback(
+    async (id: string) => {
+      const data = await loadKbTree(id);
+      setDataByKb((prev) => ({ ...prev, [id]: data }));
+      setDocCount(data.documents.length);
+    },
+    [loadKbTree],
+  );
+
+  const ensureLoaded = useCallback(
+    async (id: string) => {
+      // 占位去重：同一库的展开/切库并发只发一次请求
+      if (loadingRef.current.has(id)) return;
+      loadingRef.current.add(id);
+      try {
+        const data = await loadKbTree(id);
+        setDataByKb((prev) => ({ ...prev, [id]: data }));
+      } finally {
+        loadingRef.current.delete(id);
+      }
+    },
+    [loadKbTree],
+  );
+
+  /** UploadPanel 的文档数量回调：同步空态并刷新树（保证文件夹归属一致）。 */
+  const handleDocsChange = useCallback(
+    (count: number) => {
+      setDocCount(count);
+      if (kbId) void reloadKb(kbId);
+    },
+    [kbId, reloadKb],
+  );
+
+  const handleCreateFolder = async (input: {
+    kbId: string;
+    parentId: string | null;
+    name: string;
+  }) => {
+    await createFolder(input.kbId, input.name, input.parentId);
+    await reloadKb(input.kbId);
+  };
+
+  const handleRenameFolder = async (kbId: string, folderId: string, name: string) => {
+    await renameFolder(folderId, name);
+    await reloadKb(kbId);
+  };
+
+  const handleDeleteFolder = async (kbId: string, folderId: string) => {
+    await deleteFolder(folderId);
+    await reloadKb(kbId);
+  };
+
+  const handleMoveDocument = async (kbId: string, docId: string, folderId: string | null) => {
+    await moveDocument(docId, folderId);
+    await reloadKb(kbId);
+  };
+
+  const handleDeleteDoc = async (kbId: string, docId: string) => {
+    await deleteDocument(docId);
+    await reloadKb(kbId);
+  };
+
+  const handleOrganize = async () => {
+    if (!kbId) return;
+    await organizeFolders(kbId);
+    await reloadKb(kbId);
+  };
+
   const handleCreateKb = async (name: string) => {
     const kb = await createKb(name);
     setKbs((prev) => [...prev, kb]);
@@ -75,6 +163,9 @@ export default function ChatPage() {
         role: m.role,
         content: m.content,
         sources: m.sources ?? [],
+        tokenInput: m.tokenInput,
+        tokenOutput: m.tokenOutput,
+        cost: m.cost,
       })),
     );
   };
@@ -152,6 +243,13 @@ export default function ChatPage() {
           case 'delta':
             patchAssistant((m) => ({ content: m.content + event.delta }));
             break;
+          case 'done':
+            patchAssistant({
+              tokenInput: event.usage.input,
+              tokenOutput: event.usage.output,
+              cost: event.cost,
+            });
+            break;
           case 'error':
             patchAssistant({ error: true, content: event.message });
             break;
@@ -198,12 +296,20 @@ export default function ChatPage() {
         conversations={conversations}
         conversationId={conversationId}
         userEmail={session?.user?.email ?? ''}
+        dataByKb={dataByKb}
         onSwitchKb={setKbId}
         onCreateKb={handleCreateKb}
         onNewChat={handleNewChat}
         onSelectConversation={(id) => void handleSelectConversation(id)}
         onDeleteConversation={handleDeleteConversation}
         onSignOut={() => void signOut({ callbackUrl: '/login' })}
+        onEnsureLoaded={ensureLoaded}
+        onCreateFolder={handleCreateFolder}
+        onRenameFolder={handleRenameFolder}
+        onDeleteFolder={handleDeleteFolder}
+        onMoveDocument={handleMoveDocument}
+        onDeleteDocument={handleDeleteDoc}
+        onOrganize={handleOrganize}
       />
 
       <section className="flex min-w-0 flex-1 flex-col">
@@ -221,7 +327,7 @@ export default function ChatPage() {
 
         {showUpload && kbId && (
           <div className="border-b border-slate-100 bg-slate-50/60 px-6 py-3">
-            <UploadPanel kbId={kbId} onDocsChange={setDocCount} />
+            <UploadPanel kbId={kbId} onDocsChange={handleDocsChange} />
           </div>
         )}
 

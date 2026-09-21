@@ -3,6 +3,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { SourceItem, UiChatMessage } from '@/lib/types';
+import { formatCost } from '@/lib/ai/pricing';
 
 interface Props {
   message: UiChatMessage;
@@ -55,11 +56,38 @@ export function MessageItem({ message, onCite }: Props) {
                 ))}
               </div>
             )}
+            {message.tokenInput != null && !message.streaming && (
+              <p
+                className="mt-2 border-t border-slate-100 pt-2 text-[10px] leading-4 text-slate-400"
+                title="金额按官方公开价估算：输入按缓存未命中单价计（费用上限），命中上下文缓存时实际更低；向量化 BGE-m3 当前免费。"
+              >
+                本次消耗：输入 {formatTokens(message.tokenInput)} · 输出{' '}
+                {formatTokens(message.tokenOutput ?? 0)} · 共{' '}
+                {formatTokens(message.tokenInput + (message.tokenOutput ?? 0))} tokens
+                {message.cost && (
+                  <>
+                    {' '}
+                    · 估算{' '}
+                    <span className="font-medium text-slate-500">
+                      {formatCost(message.cost.totalCost)}
+                    </span>
+                    <span className="ml-1 text-slate-300">
+                      （{message.cost.peak ? '高峰价' : '空闲价'}）
+                    </span>
+                  </>
+                )}
+              </p>
+            )}
           </>
         )}
       </div>
     </div>
   );
+}
+
+/** token 数加千分位，便于阅读。 */
+function formatTokens(value: number): string {
+  return value.toLocaleString('zh-CN');
 }
 
 /**

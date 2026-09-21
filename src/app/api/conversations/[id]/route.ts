@@ -8,6 +8,8 @@ import { ApiError, handleRoute, parseParams } from '@/lib/http/route';
 import { requireUserId } from '@/lib/auth/session';
 import { idParamSchema } from '@/lib/validation/schemas';
 import type { MessageDto } from '@/lib/types';
+import { estimateCost } from '@/lib/ai/pricing';
+import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
 
@@ -29,12 +31,26 @@ export async function GET(
     const messages = await listMessages(conversation.id);
     const dto: MessageDto[] = messages
       .filter((m): m is typeof m & { role: 'user' | 'assistant' } => m.role !== 'system')
-      .map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        sources: Array.isArray(m.sources) ? (m.sources as MessageDto['sources']) : [],
-      }));
+      .map((m) => {
+        // 历史消息按当前模型定价、消息创建时刻的峰谷现场估算；中断未落 usage 的不估算
+        const cost =
+          m.role === 'assistant' && m.tokenInput != null
+            ? estimateCost(
+                env.LLM_MODEL,
+                { input: m.tokenInput, output: m.tokenOutput ?? 0 },
+                new Date(m.createdAt),
+              )
+            : null;
+        return {
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          sources: Array.isArray(m.sources) ? (m.sources as MessageDto['sources']) : [],
+          tokenInput: m.tokenInput,
+          tokenOutput: m.tokenOutput,
+          cost,
+        };
+      });
 
     return Response.json({ conversation, messages: dto });
   });

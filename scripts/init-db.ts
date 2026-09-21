@@ -79,6 +79,22 @@ DROP INDEX IF EXISTS documents_kb_filename_uidx;
 CREATE UNIQUE INDEX IF NOT EXISTS documents_kb_content_uidx
   ON documents (kb_id, content_hash);
 
+-- 文件夹（知识库内可多级）：删除知识库级联清理；删除父文件夹级联删除子树
+CREATE TABLE IF NOT EXISTS folders (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  kb_id      UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+  parent_id  UUID REFERENCES folders(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- 同库同父下文件夹名唯一（COALESCE 把 NULL 父级折成固定 UUID，绕开唯一索引中 NULL 互不相等）
+CREATE UNIQUE INDEX IF NOT EXISTS folders_kb_parent_name_uidx
+  ON folders (kb_id, COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'), name);
+
+-- 文档归属文件夹；删文件夹时文档不删除，folder_id 置空（变「未分类」）
+ALTER TABLE documents
+  ADD COLUMN IF NOT EXISTS folder_id UUID REFERENCES folders(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS conversations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   kb_id       UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,

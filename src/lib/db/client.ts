@@ -16,6 +16,8 @@ function createClient(): Sql {
     // Neon 等托管库的 pooled 连接走 PgBouncer 事务模式，与服务端 prepared statement 不兼容；
     // 本地直连 Postgres 关闭它也无副作用，故统一关闭，保证同一套配置两处可跑。
     prepare: false,
+    // Neon 计算节点休眠后冷启动实测可达 17s，默认 10s 会误报 CONNECT_TIMEOUT
+    connect_timeout: 30,
     onnotice: () => undefined, // RRF 提示等 NOTICE 不刷屏
   });
   return globalForDb.__kbragSql;

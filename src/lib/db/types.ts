@@ -25,6 +25,16 @@ export interface DocumentRecord {
   errorMsg: string | null;
   chunkCount: number;
   contentHash: string | null;
+  folderId: string | null;
+  createdAt: string;
+}
+
+/** 知识库内的文件夹（parentId 为 null 即顶层文件夹）。 */
+export interface FolderRecord {
+  id: string;
+  kbId: string;
+  parentId: string | null;
+  name: string;
   createdAt: string;
 }
 
@@ -52,6 +62,8 @@ export interface MessageRecord {
   role: MessageRole;
   content: string;
   sources: unknown;
+  tokenInput: number | null;
+  tokenOutput: number | null;
   createdAt: string;
 }
 

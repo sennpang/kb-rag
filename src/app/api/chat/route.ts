@@ -1,5 +1,7 @@
 import { convertToCoreMessages, streamText, type UIMessage } from 'ai';
 import { getChatModel } from '@/lib/ai/provider';
+import { estimateCost } from '@/lib/ai/pricing';
+import { env, isDev } from '@/lib/env';
 import { buildSystemPrompt, toSourceItems } from '@/lib/ai/prompts';
 import {
   countRecentChatsByOwner,
@@ -32,15 +34,18 @@ export async function POST(req: Request): Promise<Response> {
     const { kbId, conversationId, messages } = await parseJsonBody(req, chatRequestSchema);
     if (!(await knowledgeBaseExists(kbId, userId))) throw new ApiError('知识库不存在', 404);
 
-    const [chatsHourly, chatsDaily] = await Promise.all([
-      countRecentChatsByOwner(userId, 3600),
-      countRecentChatsByOwner(userId, 86400),
-    ]);
-    if (chatsHourly >= CHAT_HOURLY_LIMIT) {
-      throw new ApiError('提问过于频繁，请 1 小时后再试', 429);
-    }
-    if (chatsDaily >= CHAT_DAILY_LIMIT) {
-      throw new ApiError('今日提问次数已达上限，请明天再试', 429);
+    // dev 模式不限提问频率，便于本地调试
+    if (!isDev) {
+      const [chatsHourly, chatsDaily] = await Promise.all([
+        countRecentChatsByOwner(userId, 3600),
+        countRecentChatsByOwner(userId, 86400),
+      ]);
+      if (chatsHourly >= CHAT_HOURLY_LIMIT) {
+        throw new ApiError('提问过于频繁，请 1 小时后再试', 429);
+      }
+      if (chatsDaily >= CHAT_DAILY_LIMIT) {
+        throw new ApiError('今日提问次数已达上限，请明天再试', 429);
+      }
     }
 
     const question = [...messages].reverse().find((m) => m.role === 'user')?.content.trim();
@@ -81,7 +86,15 @@ export async function POST(req: Request): Promise<Response> {
         for await (const delta of result.textStream) {
           send({ type: 'delta', delta });
         }
-        send({ type: 'done' });
+        // 模型返回的真实 usage（非估算），随 done 帧交给前端展示；onFinish 已完成落库
+        const usage = await result.usage;
+        const tokenUsage = { input: usage.promptTokens, output: usage.completionTokens };
+        send({
+          type: 'done',
+          usage: tokenUsage,
+          // 金额为估算上限：输入按缓存未命中价计，实际命中缓存更低
+          cost: estimateCost(env.LLM_MODEL, tokenUsage),
+        });
       } catch (error) {
         send({
           type: 'error',

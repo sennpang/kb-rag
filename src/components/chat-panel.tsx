@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SourceItem, UiChatMessage } from '@/lib/types';
+import { formatCost } from '@/lib/ai/pricing';
 import { MessageItem } from './message-item';
 
 interface Props {
@@ -29,6 +30,23 @@ export function ChatPanel({ messages, isStreaming, hasDocuments, onSend, onStop,
     onSend(content);
     setInput('');
   };
+
+  // 本会话累计：仅统计已拿到真实 usage 的问答轮次（流式中的回答不计入）
+  const totals = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    let cost = 0;
+    let rounds = 0;
+    for (const m of messages) {
+      if (m.role === 'assistant' && m.tokenInput != null) {
+        input += m.tokenInput;
+        output += m.tokenOutput ?? 0;
+        cost += m.cost?.totalCost ?? 0;
+        rounds += 1;
+      }
+    }
+    return { input, output, cost, rounds };
+  }, [messages]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -65,7 +83,18 @@ export function ChatPanel({ messages, isStreaming, hasDocuments, onSend, onStop,
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-slate-200 bg-white px-6 py-4">
+      <div className="border-t border-slate-200 bg-white px-6 pt-3 pb-4">
+        {totals.rounds > 0 && (
+          <div
+            className="mx-auto mb-2 max-w-3xl text-center text-[10px] text-slate-400"
+            title="金额按官方公开价估算：输入按缓存未命中单价计（费用上限），命中上下文缓存时实际更低。"
+          >
+            本会话累计（{totals.rounds} 轮）· 输入 {totals.input.toLocaleString('zh-CN')} · 输出{' '}
+            {totals.output.toLocaleString('zh-CN')} · 共{' '}
+            {(totals.input + totals.output).toLocaleString('zh-CN')} tokens · 估算{' '}
+            <span className="font-medium text-slate-500">{formatCost(totals.cost)}</span>
+          </div>
+        )}
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <textarea
             value={input}

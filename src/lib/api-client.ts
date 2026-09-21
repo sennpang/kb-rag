@@ -2,6 +2,7 @@ import type {
   ChunkContextDto,
   ConversationDto,
   DocumentDto,
+  FolderDto,
   KnowledgeBaseDto,
   MessageDto,
 } from './types';
@@ -17,7 +18,8 @@ async function readError(response: Response): Promise<string> {
 }
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal });
+  // 列表/详情响应禁止读浏览器缓存，避免文档树与库内实际数据不一致
+  const response = await fetch(url, { signal, cache: 'no-store' });
   if (!response.ok) throw new Error(await readError(response));
   return response.json() as Promise<T>;
 }
@@ -30,6 +32,16 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   });
   if (!response.ok) throw new Error(await readError(response));
   return response.json() as Promise<T>;
+}
+
+async function sendJson<T>(url: string, method: string, body?: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json().catch(() => null)) as T;
 }
 
 async function request(url: string, init: RequestInit): Promise<void> {
@@ -62,6 +74,27 @@ export async function uploadDocument(
 
 export const deleteDocument = (id: string) =>
   request(`/api/documents/${id}`, { method: 'DELETE' });
+
+/** 移动文档到文件夹；folderId 为 null 即移出为未分类。 */
+export const moveDocument = (docId: string, folderId: string | null) =>
+  sendJson(`/api/documents/${docId}`, 'PATCH', { folderId });
+
+/* ── 文件夹 ── */
+export const listFolders = (kbId: string) =>
+  getJson<FolderDto[]>(`/api/folders?kbId=${encodeURIComponent(kbId)}`);
+
+export const createFolder = (kbId: string, name: string, parentId?: string | null) =>
+  postJson<FolderDto>('/api/folders', { kbId, name, parentId: parentId ?? null });
+
+export const renameFolder = (id: string, name: string) =>
+  sendJson(`/api/folders/${id}`, 'PATCH', { name });
+
+export const deleteFolder = (id: string) =>
+  request(`/api/folders/${id}`, { method: 'DELETE' });
+
+/** AI 一键整理未分类文档，返回总数与成功归位数。 */
+export const organizeFolders = (kbId: string) =>
+  postJson<{ total: number; organized: number }>('/api/folders/organize', { kbId });
 
 /* ── 会话 ── */
 export const listConversations = (kbId: string) =>

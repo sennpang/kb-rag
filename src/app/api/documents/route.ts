@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { env } from '@/lib/env';
+import { env, isDev } from '@/lib/env';
 import {
   countDocumentsInKb,
   countRecentDocumentsByOwner,
@@ -46,7 +46,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     parseParams({ kbId }, kbParamSchema);
     if (!(file instanceof File)) throw new ApiError('缺少 file 文件', 422);
-    if (file.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
+    // dev 模式不限文件大小（超大文件的索引耗时也无平台超时限制）
+    if (!isDev && file.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
       throw new ApiError(`文件超过 ${env.MAX_FILE_SIZE_MB}MB 限制`, 413);
     }
     if (!isSupportedFile(file.name, file.type)) {
@@ -54,19 +55,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     if (!(await knowledgeBaseExists(kbId, userId))) throw new ApiError('知识库不存在', 404);
 
-    // 数量配额先于哈希/索引校验，尽早拦截且不消耗解析与向量化资源
-    if ((await countDocumentsInKb(kbId)) >= KB_DOCUMENT_LIMIT) {
-      throw new ApiError(`该知识库文档已达 ${KB_DOCUMENT_LIMIT} 个上限，请删除后再传`, 429);
-    }
-    const [uploadedHourly, uploadedDaily] = await Promise.all([
-      countRecentDocumentsByOwner(userId, 3600),
-      countRecentDocumentsByOwner(userId, 86400),
-    ]);
-    if (uploadedHourly >= USER_HOURLY_UPLOAD_LIMIT) {
-      throw new ApiError('上传过于频繁，请 1 小时后再试', 429);
-    }
-    if (uploadedDaily >= USER_DAILY_UPLOAD_LIMIT) {
-      throw new ApiError('今日上传量已达上限，请明天再试', 429);
+    // 数量配额先于哈希/索引校验，尽早拦截且不消耗解析与向量化资源；dev 模式全部放开
+    if (!isDev) {
+      if ((await countDocumentsInKb(kbId)) >= KB_DOCUMENT_LIMIT) {
+        throw new ApiError(`该知识库文档已达 ${KB_DOCUMENT_LIMIT} 个上限，请删除后再传`, 429);
+      }
+      const [uploadedHourly, uploadedDaily] = await Promise.all([
+        countRecentDocumentsByOwner(userId, 3600),
+        countRecentDocumentsByOwner(userId, 86400),
+      ]);
+      if (uploadedHourly >= USER_HOURLY_UPLOAD_LIMIT) {
+        throw new ApiError('上传过于频繁，请 1 小时后再试', 429);
+      }
+      if (uploadedDaily >= USER_DAILY_UPLOAD_LIMIT) {
+        throw new ApiError('今日上传量已达上限，请明天再试', 429);
+      }
     }
 
     // 内容指纹以后端重算为准（前端 hash 仅用于即时提示，不可信任）

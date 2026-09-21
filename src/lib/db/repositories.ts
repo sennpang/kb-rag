@@ -4,6 +4,7 @@ import type {
   Conversation,
   DocumentRecord,
   DocumentStatus,
+  FolderRecord,
   KnowledgeBase,
   MessageRecord,
   MessageRole,
@@ -131,11 +132,12 @@ interface DocumentRow {
   error_msg: string | null;
   chunk_count: number;
   content_hash: string | null;
+  folder_id: string | null;
   created_at: Date;
 }
 
 const DOCUMENT_COLUMNS =
-  'id, kb_id, filename, status, mime_type, error_msg, chunk_count, content_hash, created_at';
+  'id, kb_id, filename, status, mime_type, error_msg, chunk_count, content_hash, folder_id, created_at';
 
 const mapDocument = (r: DocumentRow): DocumentRecord => ({
   id: r.id,
@@ -146,6 +148,7 @@ const mapDocument = (r: DocumentRow): DocumentRecord => ({
   errorMsg: r.error_msg,
   chunkCount: r.chunk_count,
   contentHash: r.content_hash,
+  folderId: r.folder_id,
   createdAt: r.created_at.toISOString(),
 });
 
@@ -195,6 +198,79 @@ export async function getDocument(id: string): Promise<DocumentRecord | null> {
 export async function deleteDocument(id: string): Promise<void> {
   // chunks 通过 ON DELETE CASCADE 自动清理
   await sql`DELETE FROM documents WHERE id = ${id}`;
+}
+
+/** 把文档移动到目标文件夹（folderId 为 null 即移出为「未分类」）。 */
+export async function setDocumentFolder(docId: string, folderId: string | null): Promise<void> {
+  await sql`UPDATE documents SET folder_id = ${folderId} WHERE id = ${docId}`;
+}
+
+/** 知识库内未归入任何文件夹的文档（含已就绪与失败的），供 AI 批量整理。 */
+export async function listUnclassifiedDocuments(kbId: string): Promise<DocumentRecord[]> {
+  const rows = await sql<DocumentRow[]>`
+    SELECT ${sql.unsafe(DOCUMENT_COLUMNS)}
+    FROM documents WHERE kb_id = ${kbId} AND folder_id IS NULL
+    ORDER BY created_at DESC
+  `;
+  return rows.map(mapDocument);
+}
+
+/* ──────────────────────── 文件夹 ──────────────────────── */
+
+interface FolderRow {
+  id: string;
+  kb_id: string;
+  parent_id: string | null;
+  name: string;
+  created_at: Date;
+}
+
+const mapFolder = (r: FolderRow): FolderRecord => ({
+  id: r.id,
+  kbId: r.kb_id,
+  parentId: r.parent_id,
+  name: r.name,
+  createdAt: r.created_at.toISOString(),
+});
+
+export async function listFolders(kbId: string): Promise<FolderRecord[]> {
+  const rows = await sql<FolderRow[]>`
+    SELECT id, kb_id, parent_id, name, created_at
+    FROM folders WHERE kb_id = ${kbId} ORDER BY created_at ASC
+  `;
+  return rows.map(mapFolder);
+}
+
+export async function getFolder(id: string): Promise<FolderRecord | null> {
+  const rows = await sql<FolderRow[]>`
+    SELECT id, kb_id, parent_id, name, created_at FROM folders WHERE id = ${id}
+  `;
+  return rows[0] ? mapFolder(rows[0]) : null;
+}
+
+export async function insertFolder(input: {
+  kbId: string;
+  parentId: string | null;
+  name: string;
+}): Promise<FolderRecord> {
+  const rows = await sql<FolderRow[]>`
+    INSERT INTO folders (kb_id, parent_id, name)
+    VALUES (${input.kbId}, ${input.parentId}, ${input.name})
+    RETURNING id, kb_id, parent_id, name, created_at
+  `;
+  return mapFolder(rows[0]!);
+}
+
+export async function renameFolder(id: string, name: string): Promise<void> {
+  await sql`UPDATE folders SET name = ${name} WHERE id = ${id}`;
+}
+
+/**
+ * 删除文件夹：子文件夹经自引用外键级联删除；
+ * 子树内文档经 documents.folder_id ON DELETE SET NULL 全部变为未分类。
+ */
+export async function deleteFolder(id: string): Promise<void> {
+  await sql`DELETE FROM folders WHERE id = ${id}`;
 }
 
 /** 知识库内文档总数（含处理失败），用于单库容量上限。 */
@@ -273,6 +349,15 @@ export async function insertChunks(
       );
     }
   });
+}
+
+/** 读取文档首段切片内容（无切片/空文档返回 null），供 AI 批量整理时取样。 */
+export async function getFirstChunkContent(docId: string): Promise<string | null> {
+  const rows = await sql<Array<{ content: string }>>`
+    SELECT content FROM chunks
+    WHERE doc_id = ${docId} AND chunk_index = 0
+  `;
+  return rows[0]?.content ?? null;
 }
 
 export async function getChunkWithContext(
@@ -400,6 +485,8 @@ export async function listMessages(conversationId: string): Promise<MessageRecor
     role: r.role,
     content: r.content,
     sources: r.sources,
+    tokenInput: r.token_input,
+    tokenOutput: r.token_output,
     createdAt: r.created_at.toISOString(),
   }));
 }

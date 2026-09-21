@@ -1,5 +1,7 @@
 import { embedTexts } from '@/lib/ai/embeddings';
+import { buildSampleFromChunks, placeDocument } from '@/lib/ai/classify';
 import { insertChunks, updateDocumentStatus } from '@/lib/db/repositories';
+import { isDev } from '@/lib/env';
 import { parseFileToText } from './parsers';
 import { splitText } from './splitters';
 
@@ -31,7 +33,8 @@ export async function ingestDocument(params: {
     if (pieces.length === 0) {
       throw new Error('切分结果为空');
     }
-    if (pieces.length > MAX_CHUNKS_PER_DOC) {
+    // dev 模式不限制切片数（文件大小不限后大文件必然超出此上限）
+    if (!isDev && pieces.length > MAX_CHUNKS_PER_DOC) {
       throw new Error(
         `文档切片数 ${pieces.length} 超过单文档上限 ${MAX_CHUNKS_PER_DOC}（约 50 万字），请拆分后分批上传`,
       );
@@ -48,7 +51,17 @@ export async function ingestDocument(params: {
       })),
     );
 
+    // 文档先落 done：即使随后的分类阶段失败/超时，文档也已可检索，用户可手动点「AI 整理」补归类
     await updateDocumentStatus(docId, 'done', { chunkCount: pieces.length });
+
+    try {
+      const sample = buildSampleFromChunks(pieces);
+      await placeDocument({ kbId, docId, sample });
+    } catch (error) {
+      // 分类是增强能力：失败仅记录，文档保持未分类，不影响上传结果
+      console.error('[ingest] 自动分类失败：', error);
+    }
+
     return { chunkCount: pieces.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

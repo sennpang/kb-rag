@@ -18,13 +18,26 @@ const envSchema = z.object({
   EMBEDDING_MODEL: z.string().default('BAAI/bge-m3'),
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1024),
 
-  MAX_FILE_SIZE_MB: z.coerce.number().int().positive().max(100).default(20),
+  // dev 模式放开配额（见各路由），同时允许把上限调到 100MB 以上
+  MAX_FILE_SIZE_MB: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(process.env.NODE_ENV === 'development' ? 100_000 : 100)
+    .default(20),
 
   SMTP_HOST: z.string().default('smtp.qq.com'),
   SMTP_PORT: z.coerce.number().int().positive().default(465),
   SMTP_USER: z.string().min(1, '缺少 SMTP_USER（发件邮箱）'),
   SMTP_PASS: z.string().min(1, '缺少 SMTP_PASS（邮箱 SMTP 授权码，非登录密码）'),
-  EMAIL_FROM: z.string().optional(),
+  // 发件地址可与登录账号不同（如 QQ 邮箱别名）：填纯邮箱，或 "发件人名称" <邮箱>
+  EMAIL_FROM: z
+    .string()
+    .regex(
+      /^(?:[^\s"<>]+@[^\s"<>]+|.*<[^\s"<>]+@[^\s"<>]+>)$/,
+      'EMAIL_FROM 格式应为 邮箱地址 或 "发件人名称" <邮箱地址>',
+    )
+    .optional(),
 });
 
 type Env = z.infer<typeof envSchema>;
@@ -49,3 +62,9 @@ export const env: Env = new Proxy({} as Env, {
     return load()[key];
   },
 });
+
+/**
+ * 是否开发模式（next dev）。
+ * 读取 NODE_ENV 不会触发 env schema 的懒加载校验，客户端也会被构建器静态替换。
+ */
+export const isDev: boolean = process.env.NODE_ENV === 'development';

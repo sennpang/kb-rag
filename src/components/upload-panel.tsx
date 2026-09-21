@@ -91,7 +91,11 @@ export function UploadPanel({ kbId, onDocsChange }: Props) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-800">知识库文档</h2>
-          <p className="mt-0.5 text-xs text-slate-400">支持 PDF / DOCX / Markdown / TXT，单文件 ≤ 20MB</p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            {process.env.NODE_ENV === 'development'
+              ? '开发模式 · 支持 PDF / DOCX / Markdown / TXT，文件大小不限'
+              : '支持 PDF / DOCX / Markdown / TXT，单文件 ≤ 20MB'}
+          </p>
         </div>
         <label className="cursor-pointer rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-50">
           {uploading ? '计算指纹/索引中…' : '上传文档'}
