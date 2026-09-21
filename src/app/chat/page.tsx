@@ -327,7 +327,11 @@ export default function ChatPage() {
 
         {showUpload && kbId && (
           <div className="border-b border-slate-100 bg-slate-50/60 px-6 py-3">
-            <UploadPanel kbId={kbId} onDocsChange={handleDocsChange} />
+            <UploadPanel
+              kbId={kbId}
+              onDocsChange={handleDocsChange}
+              quotaExempt={session?.user?.quotaExempt ?? false}
+            />
           </div>
         )}
 

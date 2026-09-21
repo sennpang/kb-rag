@@ -17,6 +17,17 @@ export const authConfig = {
     },
     session({ session, token }) {
       if (token.id) session.user.id = token.id;
+      // 注入配额豁免标记（口径须与 src/lib/quota.ts 的 isQuotaExempt 保持一致）。
+      // 此处直接读 process.env 而非导入 env.ts，保证本配置在 Edge runtime 可用。
+      const email = session.user.email?.trim().toLowerCase();
+      const whitelist = new Set(
+        (process.env.QUOTA_WHITELIST_EMAILS ?? '')
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean),
+      );
+      session.user.quotaExempt =
+        process.env.NODE_ENV === 'development' || (!!email && whitelist.has(email));
       return session;
     },
   },

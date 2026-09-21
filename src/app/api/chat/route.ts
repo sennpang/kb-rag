@@ -1,7 +1,7 @@
 import { convertToCoreMessages, streamText, type UIMessage } from 'ai';
 import { getChatModel } from '@/lib/ai/provider';
 import { estimateCost } from '@/lib/ai/pricing';
-import { env, isDev } from '@/lib/env';
+import { env } from '@/lib/env';
 import { buildSystemPrompt, toSourceItems } from '@/lib/ai/prompts';
 import {
   countRecentChatsByOwner,
@@ -13,8 +13,9 @@ import {
 import { hybridRetrieve } from '@/lib/rag/retrieve';
 import { ApiError, handleRoute, parseJsonBody } from '@/lib/http/route';
 import { sseResponse } from '@/lib/http/sse';
-import { requireUserId } from '@/lib/auth/session';
-import { chatRequestSchema } from '@/lib/validation/schemas';
+import { requireUser } from '@/lib/auth/session';
+import { isQuotaExempt } from '@/lib/quota';
+import { chatRequestSchema, chatRequestExemptSchema } from '@/lib/validation/schemas';
 
 export const runtime = 'nodejs';
 // Vercel Hobby 函数超时上限 60s；流式回答在此时间内持续返回，不占用平台缓冲
@@ -30,12 +31,16 @@ const CHAT_DAILY_LIMIT = 300;
  */
 export async function POST(req: Request): Promise<Response> {
   return handleRoute(async () => {
-    const userId = await requireUserId();
-    const { kbId, conversationId, messages } = await parseJsonBody(req, chatRequestSchema);
+    const { id: userId, email } = await requireUser();
+    const quotaExempt = isQuotaExempt(email);
+    const { kbId, conversationId, messages } = await parseJsonBody(
+      req,
+      quotaExempt ? chatRequestExemptSchema : chatRequestSchema,
+    );
     if (!(await knowledgeBaseExists(kbId, userId))) throw new ApiError('知识库不存在', 404);
 
-    // dev 模式不限提问频率，便于本地调试
-    if (!isDev) {
+    // dev 模式 / 白名单账号不限提问频率
+    if (!quotaExempt) {
       const [chatsHourly, chatsDaily] = await Promise.all([
         countRecentChatsByOwner(userId, 3600),
         countRecentChatsByOwner(userId, 86400),

@@ -8,6 +8,8 @@ interface Props {
   kbId: string;
   /** 文档数量变化时通知父级（用于对话区空态提示） */
   onDocsChange?: (count: number) => void;
+  /** 配额豁免（dev / 白名单账号）：文件大小不限 */
+  quotaExempt?: boolean;
 }
 
 const STATUS_LABEL: Record<DocumentDto['status'], { text: string; className: string }> = {
@@ -24,7 +26,7 @@ async function computeFileHash(file: File): Promise<string> {
 }
 
 /** 文档上传与管理面板（内嵌在对话页顶部的可折叠区域）。 */
-export function UploadPanel({ kbId, onDocsChange }: Props) {
+export function UploadPanel({ kbId, onDocsChange, quotaExempt = false }: Props) {
   const [documents, setDocuments] = useState<DocumentDto[]>([]);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -92,8 +94,8 @@ export function UploadPanel({ kbId, onDocsChange }: Props) {
         <div>
           <h2 className="text-sm font-semibold text-slate-800">知识库文档</h2>
           <p className="mt-0.5 text-xs text-slate-400">
-            {process.env.NODE_ENV === 'development'
-              ? '开发模式 · 支持 PDF / DOCX / Markdown / TXT，文件大小不限'
+            {quotaExempt
+              ? `${process.env.NODE_ENV === 'development' ? '开发模式' : '专属账号'} · 支持 PDF / DOCX / Markdown / TXT，文件大小不限`
               : '支持 PDF / DOCX / Markdown / TXT，单文件 ≤ 20MB'}
           </p>
         </div>

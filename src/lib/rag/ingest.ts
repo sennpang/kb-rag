@@ -1,7 +1,6 @@
 import { embedTexts } from '@/lib/ai/embeddings';
 import { buildSampleFromChunks, placeDocument } from '@/lib/ai/classify';
 import { insertChunks, updateDocumentStatus } from '@/lib/db/repositories';
-import { isDev } from '@/lib/env';
 import { parseFileToText } from './parsers';
 import { splitText } from './splitters';
 
@@ -19,8 +18,10 @@ export async function ingestDocument(params: {
   docId: string;
   kbId: string;
   file: File;
+  /** 配额豁免（dev / 白名单）：true 时不限制切片数 */
+  quotaExempt?: boolean;
 }): Promise<{ chunkCount: number }> {
-  const { docId, kbId, file } = params;
+  const { docId, kbId, file, quotaExempt = false } = params;
   await updateDocumentStatus(docId, 'processing');
 
   try {
@@ -33,8 +34,8 @@ export async function ingestDocument(params: {
     if (pieces.length === 0) {
       throw new Error('切分结果为空');
     }
-    // dev 模式不限制切片数（文件大小不限后大文件必然超出此上限）
-    if (!isDev && pieces.length > MAX_CHUNKS_PER_DOC) {
+    // 豁免账号不限制切片数（大文件必然超出此上限）
+    if (!quotaExempt && pieces.length > MAX_CHUNKS_PER_DOC) {
       throw new Error(
         `文档切片数 ${pieces.length} 超过单文档上限 ${MAX_CHUNKS_PER_DOC}（约 50 万字），请拆分后分批上传`,
       );

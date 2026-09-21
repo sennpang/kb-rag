@@ -18,13 +18,15 @@ const envSchema = z.object({
   EMBEDDING_MODEL: z.string().default('BAAI/bge-m3'),
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1024),
 
-  // dev 模式放开配额（见各路由），同时允许把上限调到 100MB 以上
   MAX_FILE_SIZE_MB: z.coerce
     .number()
     .int()
     .positive()
     .max(process.env.NODE_ENV === 'development' ? 100_000 : 100)
     .default(20),
+
+  // 配额白名单：逗号分隔的邮箱列表，名单内账号在线上也不受文件大小/提问频率等限制
+  QUOTA_WHITELIST_EMAILS: z.string().default(''),
 
   SMTP_HOST: z.string().default('smtp.qq.com'),
   SMTP_PORT: z.coerce.number().int().positive().default(465),

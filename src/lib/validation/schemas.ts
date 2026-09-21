@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { isDev } from '@/lib/env';
 
 export const uuidSchema = z.string().uuid();
 
@@ -16,20 +15,27 @@ export const chatMessageSchema = z.object({
 export const MAX_CHAT_MESSAGES = 40; // 单次请求携带的历史消息条数上限
 export const MAX_CHAT_TOTAL_CHARS = 60_000; // 历史消息总字符上限（约 9 万 token 封顶）
 
-// dev 模式放开历史规模上限（次数不限后多轮对话不应被历史长度拦住）
-const messageCountLimit = isDev ? Number.MAX_SAFE_INTEGER : MAX_CHAT_MESSAGES;
+// 基础结构校验（不含条数/总字符限制），供普通与豁免两个版本复用
+const chatRequestBase = z.object({
+  kbId: uuidSchema,
+  conversationId: uuidSchema.optional().nullable(),
+  messages: z.array(chatMessageSchema).min(1, '至少包含一条消息'),
+});
 
-export const chatRequestSchema = z
-  .object({
-    kbId: uuidSchema,
-    conversationId: uuidSchema.optional().nullable(),
-    messages: z.array(chatMessageSchema).min(1, '至少包含一条消息').max(messageCountLimit),
+/** 普通请求：限制历史条数与总字符，防止上下文膨胀烧 token。 */
+export const chatRequestSchema = chatRequestBase
+  .refine((v) => v.messages.length <= MAX_CHAT_MESSAGES, {
+    message: `对话历史不能超过 ${MAX_CHAT_MESSAGES} 条，请开新会话`,
+    path: ['messages'],
   })
-  .refine(
-    (v) =>
-      isDev || v.messages.reduce((sum, m) => sum + m.content.length, 0) <= MAX_CHAT_TOTAL_CHARS,
-    `消息总长度不能超过 ${MAX_CHAT_TOTAL_CHARS} 字符，请开新会话或精简历史`,
-  );
+  .refine((v) => v.messages.reduce((sum, m) => sum + m.content.length, 0) <= MAX_CHAT_TOTAL_CHARS, {
+    message: `消息总长度不能超过 ${MAX_CHAT_TOTAL_CHARS} 字符，请开新会话或精简历史`,
+    path: ['messages'],
+  });
+
+/** 豁免请求（dev / 白名单账号）：只做结构校验，不限历史条数与总字符。 */
+export const chatRequestExemptSchema = chatRequestBase;
+
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 
 export const kbParamSchema = z.object({ kbId: uuidSchema });
