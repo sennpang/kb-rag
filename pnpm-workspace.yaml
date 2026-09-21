@@ -1,9 +1,7 @@
 publicHoistPattern:
   - '@auth/*'
-onlyBuiltDependencies:
-  - esbuild
-neverBuiltDependencies:
-  - canvas
+# pnpm 10.26+ / 11 的构建脚本审批机制（取代 onlyBuiltDependencies / neverBuiltDependencies）
+# true = 允许执行安装后的构建脚本；false = 明确禁止
 allowBuilds:
-  canvas: set this to true or false
-  esbuild: set this to true or false
+  esbuild: true
+  canvas: false
